@@ -203,8 +203,7 @@
         var footer = document.getElementById('footer');
 
         var filesToLoad = [
-            { url: 'doom1.wad', name: 'doom1.wad' },
-            { url: 'doomelite.wad', name: 'doomelite.wad' }
+            { url: 'doom1.wad', name: 'doom1.wad' }
         ];
         var loadedData = [];
 
@@ -255,51 +254,108 @@
             xhr.send();
         }
 
+        function showErrorOverlay(message, detail) {
+            var overlay = document.getElementById('error-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'error-overlay';
+                overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;color:#e0e0e0;font-family:Courier New,monospace;';
+                overlay.innerHTML = '<h2 style="color:#cc0000;font-size:2em;margin-bottom:15px;">ERROR</h2>'
+                    + '<p id="error-msg" style="max-width:500px;text-align:center;margin-bottom:10px;"></p>'
+                    + '<p id="error-detail" style="color:#888;font-size:0.85em;margin-bottom:25px;max-width:500px;text-align:center;"></p>'
+                    + '<button id="error-retry" style="padding:12px 40px;background:linear-gradient(180deg,#cc0000,#880000);color:white;border:none;border-radius:4px;font-family:Impact,sans-serif;font-size:1.2em;letter-spacing:2px;cursor:pointer;text-transform:uppercase;">RETRY</button>';
+                document.body.appendChild(overlay);
+            }
+            document.getElementById('error-msg').textContent = message || 'An unknown error occurred.';
+            document.getElementById('error-detail').textContent = detail || '';
+            overlay.style.display = 'flex';
+            document.getElementById('error-retry').onclick = function() {
+                overlay.style.display = 'none';
+                location.reload();
+            };
+        }
+
         function startDOOM(files) {
-            progressSection.style.display = 'none';
-            header.style.display = 'none';
-            footer.style.display = 'none';
-            gameContainer.style.display = 'block';
-            statusEl.textContent = 'Initializing...';
-            statusEl.style.color = '#cc0000';
+            try {
+                progressSection.style.display = 'none';
+                header.style.display = 'none';
+                footer.style.display = 'none';
+                gameContainer.style.display = 'block';
+                statusEl.textContent = 'Initializing...';
+                statusEl.style.color = '#cc0000';
 
-            // Go fullscreen
-            var goFS = gameContainer.requestFullscreen || gameContainer.webkitRequestFullscreen || gameContainer.msRequestFullscreen;
-            if (goFS) {
-                goFS.call(gameContainer).catch(function(){});
-            }
+                // Go fullscreen
+                var goFS = gameContainer.requestFullscreen || gameContainer.webkitRequestFullscreen || gameContainer.msRequestFullscreen;
+                if (goFS) {
+                    goFS.call(gameContainer).catch(function(){});
+                }
 
-            // doom1.wad = IWAD, doomelite.wad = PWAD patch
-            var args = ['doom', '-iwad', '/' + files[0].name];
-            for (var i = 1; i < files.length; i++) {
-                args.push('-file', '/' + files[i].name);
-            }
+                // Only doom1.wad (IWAD) - auto-start E1M1 at skill 3
+                var args = ['doom', '-iwad', '/' + files[0].name, '-warp', '1', '1', '-skill', '3'];
 
-            var doomModule = {
-                preRun: function() {
-                    for (var i = 0; i < files.length; i++) {
-                        FS.createDataFile('/', files[i].name, files[i].data, true, false);
+                var doomModule = {
+                    preRun: function() {
+                        try {
+                            for (var i = 0; i < files.length; i++) {
+                                FS.createDataFile('/', files[i].name, files[i].data, true, false);
+                            }
+                        } catch(e) {
+                            showErrorOverlay('Failed to load WAD data', e.message);
+                        }
+                    },
+                    arguments: args,
+                    print: function(text) { console.log('[DOOM]', text); },
+                    printErr: function(text) {
+                        console.warn('[DOOM]', text);
+                        if (text && text.indexOf('Z_Init') >= 0) {
+                            statusEl.textContent = '';
+                        }
+                        // Detect Z_Malloc failures
+                        if (text && text.indexOf('Z_Malloc') >= 0) {
+                            showErrorOverlay('Out of memory (Z_Malloc failed)', text);
+                        }
+                    },
+                    canvas: document.getElementById('canvas'),
+                    onAbort: function() {
+                        showErrorOverlay('Game aborted', 'The DOOM engine encountered a fatal error.');
+                    },
+                    onError: function(err) {
+                        showErrorOverlay('Runtime error', String(err));
                     }
-                },
-                arguments: args,
-                print: function(text) { console.log('[DOOM]', text); },
-                printErr: function(text) {
-                    console.warn('[DOOM]', text);
-                    if (text && text.indexOf('Z_Init') >= 0) {
-                        statusEl.textContent = '';
-                    }
-                },
-                canvas: document.getElementById('canvas')
-            };
+                };
 
-            Module = doomModule;
-            var script = document.createElement('script');
-            script.src = 'doom.js';
-            script.onerror = function() {
-                statusEl.textContent = 'Failed to load engine.';
-                statusEl.style.color = '#ff4444';
-            };
-            document.head.appendChild(script);
+                // 30-second timeout: if the game hasn't started, show error
+                var gameStarted = false;
+                var timeout = setTimeout(function() {
+                    if (!gameStarted) {
+                        showErrorOverlay(
+                            'Game failed to start',
+                            'The game did not initialize within 30 seconds. Try refreshing the page.'
+                        );
+                    }
+                }, 30000);
+
+                // Patch into status update to detect game start
+                var origPrintErr = doomModule.printErr;
+                doomModule.printErr = function(text) {
+                    origPrintErr(text);
+                    if (text && (text.indexOf('S_Init') >= 0 || text.indexOf('D_DoomLoop') >= 0 || text.indexOf('I_InitGraphics') >= 0)) {
+                        gameStarted = true;
+                        clearTimeout(timeout);
+                    }
+                };
+
+                Module = doomModule;
+                var script = document.createElement('script');
+                script.src = 'doom.js';
+                script.onerror = function() {
+                    clearTimeout(timeout);
+                    showErrorOverlay('Failed to load engine', 'doom.js could not be loaded. Check your connection and refresh.');
+                };
+                document.head.appendChild(script);
+            } catch(e) {
+                showErrorOverlay('Failed to start game', e.message || String(e));
+            }
         }
     })();
     </script>

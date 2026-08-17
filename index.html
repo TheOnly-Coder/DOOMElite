@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOOM Elite - Play DOOM in Your Browser</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @font-face {
+            font-family: 'DOOMFont';
+            src: local('Impact'), local('Arial Black');
+        }
+
+        body {
+            background: #0a0a0a;
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: 
+                radial-gradient(ellipse at 20% 50%, rgba(180, 0, 0, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 50%, rgba(180, 0, 0, 0.1) 0%, transparent 50%),
+                linear-gradient(180deg, #0a0a0a 0%, #1a0505 50%, #0a0a0a 100%);
+            z-index: -1;
+        }
+
+        .header {
+            text-align: center;
+            padding: 30px 20px 10px;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .header h1 {
+            font-family: 'Impact', 'Arial Black', sans-serif;
+            font-size: 3.5em;
+            color: #cc0000;
+            text-transform: uppercase;
+            letter-spacing: 8px;
+            text-shadow: 0 0 20px rgba(255, 0, 0, 0.5), 0 0 40px rgba(255, 0, 0, 0.2);
+            animation: pulse 3s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { text-shadow: 0 0 20px rgba(255, 0, 0, 0.5), 0 0 40px rgba(255, 0, 0, 0.2); }
+            50% { text-shadow: 0 0 30px rgba(255, 0, 0, 0.8), 0 0 60px rgba(255, 0, 0, 0.4); }
+        }
+
+        .header p {
+            color: #888;
+            font-size: 0.85em;
+            margin-top: 8px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            padding: 20px;
+        }
+
+        /* WAD Upload Section */
+        .wad-section {
+            background: linear-gradient(135deg, rgba(30, 0, 0, 0.8), rgba(10, 10, 10, 0.9));
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 30px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .wad-section h2 {
+            color: #cc0000;
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            letter-spacing: 2px;
+        }
+
+        .wad-section p {
+            color: #999;
+            font-size: 0.85em;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .upload-area {
+            border: 2px dashed #555;
+            border-radius: 8px;
+            padding: 40px 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #cc0000;
+            background: rgba(204, 0, 0, 0.05);
+        }
+
+        .upload-area input[type="file"] {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0; cursor: pointer;
+        }
+
+        .upload-icon {
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+
+        .upload-text {
+            color: #ccc;
+            font-size: 1.1em;
+        }
+
+        .upload-hint {
+            color: #666;
+            font-size: 0.8em;
+            margin-top: 8px;
+        }
+
+        .wad-info {
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(0, 204, 0, 0.1);
+            border: 1px solid #060;
+            border-radius: 4px;
+            color: #0f0;
+            font-size: 0.85em;
+            display: none;
+        }
+
+        .launch-btn {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 12px 40px;
+            background: linear-gradient(180deg, #cc0000, #880000);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Impact', sans-serif;
+            font-size: 1.2em;
+            letter-spacing: 3px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+        }
+
+        .launch-btn:hover {
+            background: linear-gradient(180deg, #ee0000, #aa0000);
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
+        }
+
+        .launch-btn:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        /* Game Container */
+        #game-container {
+            display: none;
+            text-align: center;
+        }
+
+        #canvas {
+            border: 2px solid #333;
+            border-radius: 4px;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            background: #000;
+            max-width: 100%;
+            height: auto;
+            cursor: crosshair;
+        }
+
+        #status {
+            margin-top: 10px;
+            font-size: 0.85em;
+            color: #888;
+            min-height: 20px;
+        }
+
+        .controls-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(20, 20, 20, 0.8);
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            text-align: left;
+        }
+
+        .controls-info h3 {
+            color: #cc0000;
+            font-size: 0.95em;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 20px;
+            font-size: 0.8em;
+        }
+
+        .control-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-key {
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 3px;
+            padding: 2px 8px;
+            color: #cc0000;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        .control-desc {
+            color: #888;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #444;
+            font-size: 0.75em;
+            margin-top: 20px;
+        }
+
+        .footer a {
+            color: #cc0000;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Loading overlay */
+        #loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+
+        .loader {
+            width: 60px;
+            height: 60px;
+            border: 3px solid #333;
+            border-top-color: #cc0000;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: #cc0000;
+            font-size: 1.1em;
+            letter-spacing: 2px;
+        }
+
+        @media (max-width: 600px) {
+            .header h1 { font-size: 2.2em; letter-spacing: 4px; }
+            .wad-section { padding: 20px; }
+            .controls-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>DOOM Elite</h1>
+        <p>Play DOOM directly in your browser</p>
+    </div>
+
+    <div class="container">
+        <!-- WAD File Selection -->
+        <div class="wad-section" id="wad-section">
+            <h2>Select WAD File</h2>
+            <p>
+                Upload a DOOM WAD file to play. You can use the 
+                <strong>DOOM Shareware WAD</strong> (freely available), 
+                or your own <strong>DOOM.WAD</strong> / <strong>DOOM2.WAD</strong>.
+            </p>
+            <div class="upload-area" id="upload-area">
+                <input type="file" id="wad-file" accept=".wad">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">Drop WAD file here or click to browse</div>
+                <div class="upload-hint">Supports DOOM.WAD, DOOM2.WAD, DOOM1.WAD, PLUTONIA.WAD, TNT.WAD</div>
+            </div>
+            <div class="wad-info" id="wad-info"></div>
+            <button class="launch-btn" id="launch-btn" disabled>LAUNCH DOOM</button>
+        </div>
+
+        <!-- Game Display -->
+        <div id="game-container">
+            <canvas id="canvas" width="640" height="400"></canvas>
+            <div id="status">Loading...</div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-info">
+            <h3>CONTROLS</h3>
+            <div class="controls-grid">
+                <div class="control-item">
+                    <span class="control-key">W A S D</span>
+                    <span class="control-desc">Move</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-key">← ↑ → ↓</span>
+                    <span class="control-desc">Move / Turn</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-key">Mouse</span>
+                    <span class="control-desc">Fire / Use</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-key">1-7</span>
+                    <span class="control-desc">Switch Weapons</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-key">Space</span>
+                    <span class="control-desc">Use / Open</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-key">Shift</span>
+                    <span class="control-desc">Run</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-key">Esc</span>
+                    <span class="control-desc">Menu</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-key">Tab</span>
+                    <span class="control-desc">Automap</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-key">Enter</span>
+                    <span class="control-desc">Confirm</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-key">Pause</span>
+                    <span class="control-desc">Pause Game</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="loader"></div>
+        <div class="loading-text">INITIALIZING DOOM...</div>
+    </div>
+
+    <div class="footer">
+        <p>DOOM Elite | Original DOOM &copy; id Software (1993-1996) | 
+           <a href="https://github.com/id-software/DOOM" target="_blank">Source Code</a></p>
+    </div>
+
+    <script>
+        (function() {
+            var wadFile = null;
+            var wadFileName = '';
+            var module = null;
+
+            var fileInput = document.getElementById('wad-file');
+            var uploadArea = document.getElementById('upload-area');
+            var wadInfo = document.getElementById('wad-info');
+            var launchBtn = document.getElementById('launch-btn');
+            var wadSection = document.getElementById('wad-section');
+            var gameContainer = document.getElementById('game-container');
+            var statusEl = document.getElementById('status');
+            var loadingOverlay = document.getElementById('loading-overlay');
+
+            // Drag and drop
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+
+            uploadArea.addEventListener('dragleave', function() {
+                uploadArea.classList.remove('dragover');
+            });
+
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                if (e.dataTransfer.files.length > 0) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', function(e) {
+                if (e.target.files.length > 0) {
+                    handleFile(e.target.files[0]);
+                }
+            });
+
+            function handleFile(file) {
+                if (!file.name.toLowerCase().endsWith('.wad')) {
+                    wadInfo.style.display = 'block';
+                    wadInfo.style.background = 'rgba(204, 0, 0, 0.1)';
+                    wadInfo.style.borderColor = '#c00';
+                    wadInfo.style.color = '#f44';
+                    wadInfo.textContent = 'Error: Please select a valid .wad file';
+                    launchBtn.disabled = true;
+                    return;
+                }
+
+                wadFile = file;
+                wadFileName = file.name;
+                var sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+
+                wadInfo.style.display = 'block';
+                wadInfo.style.background = 'rgba(0, 204, 0, 0.1)';
+                wadInfo.style.borderColor = '#060';
+                wadInfo.style.color = '#0f0';
+                wadInfo.innerHTML = '✓ <strong>' + file.name + '</strong> (' + sizeMB + ' MB)';
+                launchBtn.disabled = false;
+            }
+
+            launchBtn.addEventListener('click', function() {
+                if (!wadFile) return;
+                launchGame();
+            });
+
+            function launchGame() {
+                loadingOverlay.style.display = 'flex';
+                wadSection.style.display = 'none';
+                gameContainer.style.display = 'block';
+                statusEl.textContent = 'Loading DOOM...';
+                statusEl.style.color = '#cc0000';
+
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    var wadData = new Uint8Array(e.target.result);
+                    startDOOM(wadData, wadFileName);
+                };
+                reader.readAsArrayBuffer(wadFile);
+            }
+
+            function startDOOM(wadData, fileName) {
+                var doomModule = {
+                    preRun: function() {
+                        // Write WAD file to Emscripten virtual filesystem
+                        FS.createDataFile('/', fileName, wadData, true, false);
+                        console.log('WAD file written to virtual FS: /' + fileName);
+                    },
+                    arguments: ['doom', '-iwad', '/' + fileName],
+                    print: function(text) {
+                        console.log('[DOOM]', text);
+                    },
+                    printErr: function(text) {
+                        console.error('[DOOM]', text);
+                        // Show non-critical errors in status
+                        if (text && !text.includes('warning') && !text.includes('ALSA')) {
+                            statusEl.textContent = text;
+                            statusEl.style.color = '#ff8800';
+                        }
+                    },
+                    canvas: document.getElementById('canvas')
+                };
+
+                Module = doomModule;
+
+                // Load the DOOM script
+                var script = document.createElement('script');
+                script.src = 'doom.js';
+                script.onerror = function() {
+                    statusEl.textContent = 'Failed to load DOOM engine. Check console for details.';
+                    statusEl.style.color = '#ff4444';
+                    loadingOverlay.style.display = 'none';
+                };
+                document.head.appendChild(script);
+            }
+        })();
+    </script>
+</body>
+</html>
